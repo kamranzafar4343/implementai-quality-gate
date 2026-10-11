@@ -38,6 +38,32 @@
 - Run tests with `npm test`.
 - The example live report is stored in `reports/implementai-live-report.json`.
 
+## Delivery commands
+
+```bash
+npm install
+npm run audit -- --out reports/implementai-live-report.json
+npm test
+```
+
+For CI quality-gate behavior:
+
+```bash
+npm run audit -- --fail-on-issues
+```
+
+## Production next steps
+
+If this became a production quality gate, I would add:
+
+- A GUI interface to show the issues and to generate pdf report of issues.
+- GitHub Actions to run the tests and audit automatically.
+- A configured page limit, timeout, retry policy, and rate limit.
+- A baseline report so CI reports only new issues.
+- More integration tests using a local fixture website.
+- Full `robots.txt` support and optional JavaScript rendering.
+- Alerts or pull-request comments when new issues are found.
+
 ## Improvements with more time
 
 - Add a local HTTP fixture server for full crawl and sitemap integration tests.
