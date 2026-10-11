@@ -1,0 +1,10 @@
+{
+  "name": "implementai-site-quality-gate",
+  "version": "1.0.0",
+  "description": "A small, repeatable SEO and discoverability audit for public websites.",
+  "type": "module",
+  "private": true,
+  "scripts": { "audit": "node src/cli.js", "test": "node --test" },
+  "engines": { "node": ">=20" },
+  "dependencies": { "cheerio": "^1.0.0", "fast-xml-parser": "^4.5.3" }
+}
