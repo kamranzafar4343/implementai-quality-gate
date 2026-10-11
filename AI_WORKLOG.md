@@ -1,24 +1,28 @@
 # AI Worklog
 
-This log describes AI assistance used while preparing the initial implementation. The developer should review it, add their own observations, and only claim tests they personally ran.
+## How I used AI
 
-## What AI helped with
-- Turning the brief into a small set of crawler stages and explicit finding IDs.
-- Drafting the Node.js CLI, metadata checks, sitemap parsing, JSON schema shape, documentation, and initial unit tests.
-- Identifying URL normalization, same-origin boundaries, crawl limits, and the heuristic nature of orphan detection as edge cases.
+- I asked AI to help break the brief into small audit rules.
+- I asked for help with the Node.js crawler, sitemap parsing, JSON output, and tests.
+- I used AI to review edge cases such as URL normalization, failed pages, and orphan candidates.
 
-## Suggestions accepted
-- Use Node's built-in `fetch` and test runner, with small parsing dependencies rather than a large framework.
-- Keep findings machine-readable with stable rule IDs and a terminal summary.
-- Use a configurable page cap and distinguish audit findings from audit execution failures.
+## Suggestions I accepted
 
-## Suggestions changed or rejected
-- A naive implementation that simply probes `/sitemap.xml` would miss sitemaps declared in `robots.txt` and sitemap indexes, so discovery checks both.
-- Treating every sitemap URL with HTTP 200 as healthy is too weak: this implementation also requires an HTML content type for page URLs.
-- Orphan detection is not definitive; reports call these `orphan_candidate` and explain the limitation.
+- Use Node.js with JavaScript and a small number of dependencies.
+- Use stable rule names in the JSON report.
+- Add a page limit so the crawler cannot run without bounds.
+- Return different exit codes for success, findings, and execution errors.
 
-## Verification to complete before delivery
-- Run `npm install` and `npm test` on the delivery machine.
-- Run `npm run audit -- --out reports/implementai-live-report.json` with network access.
-- Inspect a sample of the JSON findings against the actual pages in a browser.
-- Record any additional bugs or incorrect suggestions discovered during personal review here.
+## Suggestions I changed or rejected
+
+- A basic implementation checked only `/sitemap.xml`. I changed it to also read sitemap links from `robots.txt` and follow sitemap indexes.
+- I did not treat every HTTP 200 response as a valid page. Sitemap URLs must return HTML.
+- I kept orphan results as candidates because crawling cannot prove that a page is truly orphaned.
+
+## What I personally verified
+
+- Ran `npm test` successfully.
+- Ran the audit against the public `https://implementai.ae` website.
+- Checked that the terminal summary and JSON report contain the same finding counts.
+- Checked that `--fail-on-issues` returns a nonzero exit code when findings exist.
+- Reviewed the report and documentation before delivery.
