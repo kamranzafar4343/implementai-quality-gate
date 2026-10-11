@@ -1,63 +1,104 @@
-# iMPLEMENTAi Website Site Quality Gate
+# Website Site Quality Gate
 
-A small Node.js crawler that audits public HTML pages for metadata quality, sitemap coverage, stale sitemap entries, and likely orphan pages. It only issues GET requests to public URLs; it does not submit forms or change the target site.
+A small Node.js tool that checks the public iMPLEMENTAi website for common SEO and website quality issues.
 
 ## Requirements
 
 - Node.js 20 or newer
-- Internet access to the target public website
+- Internet access
 
-## Install and run
+## Install
+
+From the project folder, run:
 
 ```bash
 npm install
-npm test
+```
+
+## Run the audit
+
+Run the default audit:
+
+```bash
 npm run audit
 ```
 
-By default the audit targets `https://implementai.ae` and writes `reports/latest-report.json`.
+This audits `https://implementai.ae`, prints a summary in the terminal, and saves the report to:
+
+```text
+reports/latest-report.json
+```
+
+To save the report with a different name:
 
 ```bash
-# Choose another public website
+npm run audit -- --out reports/implementai-live-report.json
+```
+
+To audit another public website:
+
+```bash
 npm run audit -- --url https://example.com
+```
 
-# Limit crawl size and choose report path
-npm run audit -- --max-pages 100 --out reports/example.json
+To limit the number of inspected pages:
 
-# CI mode: exit 1 if any findings exist; exit 2 for invalid options or audit failure
+```bash
+npm run audit -- --max-pages 100
+```
+
+## Checks performed
+
+The tool reports:
+
+- Missing meta descriptions.
+- Meta descriptions longer than 160 characters.
+- Page titles longer than 60 characters.
+- Missing or invalid canonical URLs.
+- Internal pages found through links but missing from the sitemap.
+- Sitemap URLs that do not return a live HTML page.
+- Possible orphan pages with no inbound internal links.
+
+## Run the tests
+
+```bash
+npm test
+```
+
+The tests use controlled sample data and do not contact the live website.
+
+## CI exit codes
+
+For normal use, findings do not cause a failure:
+
+```bash
+npm run audit
+```
+
+For CI, use:
+
+```bash
 npm run audit -- --fail-on-issues
 ```
 
-## Rules
+Exit codes:
 
-- `missing_meta_description`: absent or empty description.
-- `meta_description_too_long`: description exceeds 160 characters.
-- `title_too_long`: title exceeds 60 characters. A missing title is not a requested rule and is not currently reported.
-- `missing_canonical`: missing or invalid canonical URL.
-- `not_in_sitemap`: internal URL discovered through links but absent from the parsed sitemap.
-- `invalid_sitemap_url`: a sitemap URL does not return a 2xx HTML page.
-- `orphan_candidate`: a discovered or sitemap-listed URL has no inbound internal links among inspected pages. This is a heuristic and requires manual confirmation.
+- `0` — audit completed successfully with no enforced failure.
+- `1` — audit completed and findings were detected with `--fail-on-issues`.
+- `2` — invalid options or the audit could not run.
 
-Sitemap discovery reads `robots.txt`, then tries common sitemap paths, and follows sitemap indexes on the same origin. URL normalization removes fragments and trailing slashes and ignores non-HTTP(S) links. Crawl scope is restricted to the starting origin. Sitemap checks and page crawling are bounded by `--max-pages` for page inspection; sitemap discovery is separately capped at 30 sitemap files.
+## Project files
 
-## Exit behaviour
+- `src/audit.js` — crawler and audit rules.
+- `src/cli.js` — command-line interface and exit behavior.
+- `test/audit.test.js` — automated tests.
+- `reports/implementai-live-report.json` — example live report.
+- `HANDOVER.md` — short project handover.
+- `AI_WORKLOG.md` — record of AI assistance and verification.
 
-- `0`: audit completed (default, even when findings exist).
-- `1`: audit completed with findings when `--fail-on-issues` is supplied.
-- `2`: invalid CLI option or audit-level failure.
+## Limitations
 
-The report includes a generated timestamp, so report files are not byte-for-byte identical across runs. Finding order and rule evaluation are deterministic for the same observed site state.
-
-## Tests
-
-`npm test` runs Node's built-in test runner against URL normalization, all required finding categories, and non-HTML/failed-page handling. Tests use fixtures created in memory and do not contact the live website.
-
-## Limitations and assumptions
-
-- The crawler does not execute client-side JavaScript; it audits HTML returned by the server.
-- Robots directives are reported via status but are not fully interpreted; this is a bounded assessment tool, not a general-purpose search-engine crawler.
-- Canonical presence is checked, not whether it points to the preferred URL.
-- A sitemap entry is considered live only if it returns a 2xx response with `text/html`; redirects are followed and evaluated at the final response.
-- Orphan detection is approximate: a URL can look orphaned if the crawl is capped, a page blocks links, or its inbound link is on an uninspected page.
-- URL equivalence is deliberately conservative; query strings are retained because they can represent distinct pages.
-- The tool does not submit forms, authenticate, access private systems, or modify website content.
+- The tool checks server-rendered HTML and does not run JavaScript.
+- Orphan findings are candidates and should be checked manually.
+- Crawling is limited by `--max-pages`.
+- The tool only reads public pages and does not submit forms or change website content.
