@@ -2,9 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeUrl, evaluateAudit } from '../src/audit.js';
 
-test('normalizes fragments and trailing slashes', () => {
-  assert.equal(normalizeUrl('https://example.com/page/#section'), 'https://example.com/page');
-  assert.equal(normalizeUrl('/about/', 'https://example.com'), 'https://example.com/about');
+test('normalizes fragments while preserving trailing slashes and query strings', () => {
+  assert.equal(normalizeUrl('https://example.com/page/#section'), 'https://example.com/page/');
+  assert.equal(normalizeUrl('/about/', 'https://example.com'), 'https://example.com/about/');
+  assert.equal(normalizeUrl('/about?x=1', 'https://example.com'), 'https://example.com/about?x=1');
   assert.equal(normalizeUrl('mailto:test@example.com'), null);
 });
 

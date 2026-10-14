@@ -52,9 +52,45 @@ test('sitemap pages share cap, preserve skipped URLs, and discover their links',
   try {
     const report = await runAudit({ baseUrl: base, maxPages: 2, timeoutMs: 1000 });
     assert.equal(htmlRequests, 2);
+    assert.equal(report.crawl.pagesRequested, 4);
+    assert.equal(report.crawl.pagesFetched, 2);
+    assert.equal(report.crawl.pagesEvaluated, 2);
     assert.equal(report.crawl.pagesSkipped, 2);
+    assert.equal(report.crawl.pagesRemaining, 2);
     assert.equal(report.health.status, 'incomplete');
     assert.ok(report.issues.some(issue => issue.rule === 'not_in_sitemap' && issue.url === `${base}/linked`));
+  } finally { await close(server); }
+});
+
+test('overall deadline stops sitemap and page work and marks report incomplete', async () => {
+  const { server, base } = await fixture((req, res) => {
+    if (req.url === '/robots.txt' || req.url.endsWith('.xml')) { res.writeHead(404); res.end(); return; }
+    res.setHeader('content-type', 'text/html'); res.write('<html>');
+    setTimeout(() => res.end('</html>'), 500);
+  });
+  try {
+    const started = Date.now();
+    const report = await runAudit({ baseUrl: base, maxPages: 2, timeoutMs: 1000, deadlineMs: 120 });
+    assert.ok(Date.now() - started < 400);
+    assert.equal(report.health.status, 'incomplete');
+    assert.equal(report.health.deadlineExceeded, true);
+    assert.equal(report.crawl.pagesEvaluated, 0);
+  } finally { await close(server); }
+});
+
+test('same-origin redirect records requested and final URLs', async () => {
+  const { server, base } = await fixture((req, res) => {
+    if (req.url === '/robots.txt') { res.end(''); return; }
+    if (req.url === '/sitemap.xml') { res.setHeader('content-type', 'application/xml'); res.end(`<urlset><url><loc>${base}/old</loc></url></urlset>`); return; }
+    if (req.url.endsWith('.xml')) { res.writeHead(404); res.end(); return; }
+    if (req.url === '/old') { res.writeHead(301, { location: '/new?x=1' }); res.end(); return; }
+    res.setHeader('content-type', 'text/html'); res.end(html(base));
+  });
+  try {
+    const report = await runAudit({ baseUrl: `${base}/old`, maxPages: 1, timeoutMs: 1000 });
+    assert.equal(report.pages[0].url, `${base}/old`);
+    assert.equal(report.pages[0].finalUrl, `${base}/new?x=1`);
+    assert.equal(report.urlPolicy.scope, 'exact origin (scheme, hostname, port)');
   } finally { await close(server); }
 });
 

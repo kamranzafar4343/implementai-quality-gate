@@ -4,8 +4,8 @@ import { dirname, resolve } from 'node:path';
 import { runAudit } from './audit.js';
 
 function parseArgs(args) {
-  const options = { baseUrl: 'https://implementai.ae', out: 'reports/latest-report.json', maxPages: 250, timeoutMs: 12000, failOnIssues: false };
-  const names = { '--url': 'baseUrl', '--out': 'out', '--max-pages': 'maxPages', '--timeout-ms': 'timeoutMs' };
+  const options = { baseUrl: 'https://implementai.ae', out: 'reports/latest-report.json', maxPages: 250, timeoutMs: 12000, deadlineMs: 120000, failOnIssues: false };
+  const names = { '--url': 'baseUrl', '--out': 'out', '--max-pages': 'maxPages', '--timeout-ms': 'timeoutMs', '--deadline-ms': 'deadlineMs' };
   const seen = new Set();
   for (let i = 0; i < args.length; i++) {
     const token = args[i];
@@ -17,7 +17,7 @@ function parseArgs(args) {
     if (!value || value.startsWith('--')) throw new Error(`Missing value for ${token}`);
     options[names[token]] = value;
   }
-  for (const key of ['maxPages', 'timeoutMs']) {
+  for (const key of ['maxPages', 'timeoutMs', 'deadlineMs']) {
     const value = Number(options[key]);
     if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${key} must be a positive integer`);
     options[key] = value;
@@ -25,9 +25,9 @@ function parseArgs(args) {
   return options;
 }
 try {
-  const { baseUrl, out: outputPath, maxPages, timeoutMs, failOnIssues } = parseArgs(process.argv.slice(2));
+  const { baseUrl, out: outputPath, maxPages, timeoutMs, deadlineMs, failOnIssues } = parseArgs(process.argv.slice(2));
   const out = resolve(outputPath);
-  const report = await runAudit({ baseUrl, maxPages, timeoutMs });
+  const report = await runAudit({ baseUrl, maxPages, timeoutMs, deadlineMs });
   await mkdir(dirname(out), { recursive: true });
   await writeFile(out, `${JSON.stringify(report, null, 2)}\n`);
   console.log(`\nSite Quality Gate — ${report.target}`);
@@ -37,7 +37,7 @@ try {
   for (const [rule, count] of Object.entries(report.summary)) console.log(`  ${rule.padEnd(28)} ${count}`);
   console.log(`\nJSON report: ${out}`);
   console.log(`Total findings: ${report.issues.length}`);
-  console.log(`Audit health: ${report.health.status} | Evaluated: ${report.crawl.pagesEvaluated} | Skipped: ${report.crawl.pagesSkipped}`);
+  console.log(`Audit health: ${report.health.status} | Requested: ${report.crawl.pagesRequested} | Fetched: ${report.crawl.pagesFetched} | Evaluated: ${report.crawl.pagesEvaluated} | Skipped: ${report.crawl.pagesSkipped} | Remaining: ${report.crawl.pagesRemaining}`);
   if (report.health.status === 'incomplete') process.exitCode = 2;
   else if (failOnIssues && report.issues.length) process.exitCode = 1;
 } catch (error) {

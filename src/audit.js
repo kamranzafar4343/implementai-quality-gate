@@ -3,6 +3,7 @@ import { XMLParser } from 'fast-xml-parser';
 
 const xmlParser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
 const DEFAULT_TIMEOUT_MS = 12000;
+const DEFAULT_DEADLINE_MS = 120000;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 
 export function normalizeUrl(input, base) {
@@ -13,7 +14,6 @@ export function normalizeUrl(input, base) {
     url.username = '';
     url.password = '';
     if ((url.protocol === 'https:' && url.port === '443') || (url.protocol === 'http:' && url.port === '80')) url.port = '';
-    if (url.pathname !== '/') url.pathname = url.pathname.replace(/\/+$/, '');
     return url.toString();
   } catch { return null; }
 }
@@ -24,9 +24,11 @@ function sameOrigin(a, b) {
 function isHtml(response) { return (response.headers.get('content-type') || '').toLowerCase().includes('text/html'); }
 function asArray(value) { return value == null ? [] : Array.isArray(value) ? value : [value]; }
 
-async function fetchWithTimeout(url, timeoutMs, origin) {
+async function fetchWithTimeout(url, timeoutMs, origin, deadline) {
+  const remainingMs = Math.min(timeoutMs, deadline - Date.now());
+  if (remainingMs <= 0) return { ok: false, status: null, url, error: 'Audit deadline exceeded' };
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = setTimeout(() => controller.abort(), remainingMs);
   try {
     let current = url;
     for (let redirects = 0; redirects <= 5; redirects++) {
@@ -50,27 +52,27 @@ async function fetchWithTimeout(url, timeoutMs, origin) {
   } finally { clearTimeout(timer); }
 }
 
-async function fetchText(url, timeoutMs, origin = new URL(url).origin) {
+async function fetchText(url, timeoutMs, origin = new URL(url).origin, deadline = Infinity) {
   try {
-    return await fetchWithTimeout(url, timeoutMs, origin);
+    return await fetchWithTimeout(url, timeoutMs, origin, deadline);
   } catch (error) {
-    return { ok: false, status: null, url, contentType: '', text: '', error: error.name === 'AbortError' ? 'Request timed out' : error.message };
+    return { ok: false, status: null, url, contentType: '', text: '', error: error.name === 'AbortError' ? Date.now() >= deadline ? 'Audit deadline exceeded' : 'Request timed out' : error.message };
   }
 }
 
-async function discoverSitemaps(origin, timeoutMs) {
-  const robots = await fetchText(new URL('/robots.txt', origin).toString(), timeoutMs);
+async function discoverSitemaps(origin, timeoutMs, deadline) {
+  const robots = await fetchText(new URL('/robots.txt', origin).toString(), timeoutMs, origin, deadline);
   const declared = robots.ok ? [...robots.text.matchAll(/^\s*Sitemap:\s*(\S+)/gim)].map(m => m[1]) : [];
   const candidates = [...declared, ...['/sitemap.xml', '/sitemap_index.xml', '/sitemap-index.xml', '/wp-sitemap.xml'].map(p => new URL(p, origin).toString())];
   const found = new Set();
   const queue = [...new Set(candidates.map(u => normalizeUrl(u)).filter(u => u && sameOrigin(u, origin)))];
   const sitemapUrls = new Set();
   const maxSitemaps = 30;
-  while (queue.length && found.size < maxSitemaps) {
+  while (queue.length && found.size < maxSitemaps && Date.now() < deadline) {
     const url = queue.shift();
     if (found.has(url)) continue;
     found.add(url);
-    const result = await fetchText(url, timeoutMs, origin);
+    const result = await fetchText(url, timeoutMs, origin, deadline);
     if (!result.ok || !/<(?:\w+:)?(?:urlset|sitemapindex)\b/i.test(result.text.slice(0, 5000))) continue;
     sitemapUrls.add(url);
     let parsed;
@@ -94,8 +96,8 @@ async function discoverSitemaps(origin, timeoutMs) {
   return { sitemapFiles: [...sitemapUrls].filter(x => !x.startsWith('PAGE:')).sort(), sitemapPages: [...pages].sort(), robotsStatus: robots.status, incomplete: queue.length > 0 };
 }
 
-async function inspectPage(url, timeoutMs, origin) {
-  const result = await fetchText(url, timeoutMs, origin);
+async function inspectPage(url, timeoutMs, origin, deadline) {
+  const result = await fetchText(url, timeoutMs, origin, deadline);
   const page = { url, finalUrl: normalizeUrl(result.url) || url, status: result.status, contentType: result.contentType || '', fetchError: result.error || null, outOfScope: !!result.outOfScope, title: null, metaDescription: null, canonical: null, internalLinks: [] };
   if (!result.ok || !isHtml({ headers: { get: () => result.contentType } })) return page;
   const $ = cheerio.load(result.text);
@@ -136,19 +138,20 @@ export function evaluateAudit({ pages, sitemapPages, discoveredUrls, sitemapChec
   return { counts, issues };
 }
 
-export async function runAudit({ baseUrl = 'https://implementai.ae', maxPages = 250, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+export async function runAudit({ baseUrl = 'https://implementai.ae', maxPages = 250, timeoutMs = DEFAULT_TIMEOUT_MS, deadlineMs = DEFAULT_DEADLINE_MS } = {}) {
   const startUrl = normalizeUrl(baseUrl);
   if (!startUrl) throw new Error(`Invalid base URL: ${baseUrl}`);
-  if (!Number.isInteger(maxPages) || maxPages < 1 || !Number.isInteger(timeoutMs) || timeoutMs < 1) throw new Error('Invalid audit limits');
+  if (!Number.isInteger(maxPages) || maxPages < 1 || !Number.isInteger(timeoutMs) || timeoutMs < 1 || !Number.isInteger(deadlineMs) || deadlineMs < 1) throw new Error('Invalid audit limits');
+  const deadline = Date.now() + deadlineMs;
   const origin = new URL(startUrl).origin;
-  const sitemap = await discoverSitemaps(origin, timeoutMs);
+  const sitemap = await discoverSitemaps(origin, timeoutMs, deadline);
   const queue = [startUrl, ...sitemap.sitemapPages.filter(url => url !== startUrl)];
   const queued = new Set(queue);
   const visited = new Map();
   const discoveredUrls = new Set();
-  while (queue.length && visited.size < maxPages) {
+  while (queue.length && visited.size < maxPages && Date.now() < deadline) {
     const url = queue.shift();
-    const page = await inspectPage(url, timeoutMs, origin);
+    const page = await inspectPage(url, timeoutMs, origin, deadline);
     visited.set(url, page);
     if (!page.fetchError && page.status >= 200 && page.status < 300 && page.contentType.toLowerCase().includes('text/html')) {
       for (const link of page.internalLinks) {
@@ -168,14 +171,17 @@ export async function runAudit({ baseUrl = 'https://implementai.ae', maxPages = 
   if (!root || root.status < 200 || root.status >= 300 || !root.contentType.toLowerCase().includes('text/html')) errors.unshift({ url: startUrl, error: root?.fetchError || `Start URL did not return valid HTML (status ${root?.status ?? 'unknown'})` });
   if (sitemap.sitemapFiles.length === 0) errors.push({ url: origin, error: 'No readable sitemap was found' });
   const skippedUrls = [...new Set(queue)];
+  const deadlineExceeded = Date.now() >= deadline;
+  if (deadlineExceeded) errors.push({ url: startUrl, error: 'Audit deadline exceeded' });
   const incomplete = errors.length > 0 || skippedUrls.length > 0 || sitemap.incomplete;
   return {
     tool: { name: 'implementai-site-quality-gate', version: '1.0.0' },
     target: origin,
     generatedAt: new Date().toISOString(),
-    configuration: { maxPages, timeoutMs, titleMaxCharacters: 60, metaDescriptionMaxCharacters: 160 },
-    health: { status: incomplete ? 'incomplete' : evaluated.issues.length ? 'findings' : 'clean', errors, skippedUrls, sitemapDiscoveryIncomplete: sitemap.incomplete },
-    crawl: { pagesInspected: pages.length, pagesRequested: queued.size, pagesEvaluated: pages.filter(page => !page.fetchError && page.status >= 200 && page.status < 300 && page.contentType.toLowerCase().includes('text/html')).length, pagesSkipped: skippedUrls.length, maxPagesReached: skippedUrls.length > 0 && visited.size >= maxPages, robotsStatus: sitemap.robotsStatus, sitemapFiles: sitemap.sitemapFiles, sitemapUrlCount: sitemap.sitemapPages.length, discoveredInternalUrlCount: discoveredUrls.size },
+    configuration: { maxPages, timeoutMs, deadlineMs, titleMaxCharacters: 60, metaDescriptionMaxCharacters: 160 },
+    urlPolicy: { scope: 'exact origin (scheme, hostname, port)', redirects: 'up to five, same origin only', identity: 'fragments ignored; query strings and trailing slashes distinct; redirects retain requested and final URLs; canonicals reported but do not merge URLs' },
+    health: { status: incomplete ? 'incomplete' : evaluated.issues.length ? 'findings' : 'clean', errors, skippedUrls, sitemapDiscoveryIncomplete: sitemap.incomplete, deadlineExceeded },
+    crawl: { pagesInspected: pages.length, pagesRequested: queued.size, pagesFetched: pages.filter(page => page.status !== null).length, pagesEvaluated: pages.filter(page => !page.fetchError && page.status >= 200 && page.status < 300 && page.contentType.toLowerCase().includes('text/html')).length, pagesSkipped: skippedUrls.length, pagesRemaining: skippedUrls.length, maxPagesReached: skippedUrls.length > 0 && visited.size >= maxPages, robotsStatus: sitemap.robotsStatus, sitemapFiles: sitemap.sitemapFiles, sitemapUrlCount: sitemap.sitemapPages.length, discoveredInternalUrlCount: discoveredUrls.size },
     summary: evaluated.counts,
     issues: evaluated.issues,
     pages

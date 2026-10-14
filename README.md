@@ -47,6 +47,12 @@ To limit the number of inspected pages:
 npm run audit -- --max-pages 100
 ```
 
+To set the overall audit deadline (default 120,000 ms):
+
+```bash
+npm run audit -- --deadline-ms 30000
+```
+
 ## Checks performed
 
 The tool reports:
@@ -89,7 +95,9 @@ Exit codes:
 
 ## Project files
 
-The JSON `health` section distinguishes `clean`, `findings`, and `incomplete`, and lists errors and skipped URLs. Exit code `2` means invalid options or an incomplete audit; a missing sitemap or truncated crawl never passes. `--timeout-ms` sets the per-request limit. Responses are capped at 2 MiB.
+The JSON `health` section distinguishes `clean`, `findings`, and `incomplete`, and lists errors and skipped URLs. Exit code `2` means invalid options or an incomplete audit; a missing sitemap, exhausted deadline, or truncated crawl never passes. `--timeout-ms` sets the per-request limit and `--deadline-ms` limits the whole audit. Responses are capped at 2 MiB. The terminal and JSON report show requested, fetched, evaluated, skipped, and remaining page counts.
+
+URL identity uses the full HTTP(S) URL without its fragment. Query strings and trailing slashes remain distinct. Redirects are followed only within the exact origin (same scheme, host, and port), for at most five hops. Each page records its requested `url` and `finalUrl`; redirect aliases and canonical URLs do not silently merge inventory entries. Relative links resolve against `finalUrl`. External redirects make the audit incomplete.
 
 - `src/audit.js` — crawler and audit rules.
 - `src/cli.js` — command-line interface and exit behavior.
@@ -103,5 +111,5 @@ The JSON `health` section distinguishes `clean`, `findings`, and `incomplete`, a
 - The tool checks server-rendered HTML and does not run JavaScript.
 - Orphan findings are candidates and should be checked manually.
 - Crawling is limited by `--max-pages`; a truncated crawl exits incomplete.
-- Redirects to another origin are rejected. Query strings remain distinct.
+- Redirects to another origin are rejected.
 - The tool only reads public pages and does not submit forms or change website content.
