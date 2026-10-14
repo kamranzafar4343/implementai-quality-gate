@@ -61,6 +61,14 @@ npm run audit -- --delay-ms 250
 
 The crawler honors `robots.txt` `User-agent`, `Allow`, and `Disallow` rules for `SiteQualityGate` and `*`, including `*` and `$` path patterns. Excluded in-scope pages make the audit incomplete. `--delay-ms` defaults to 0 for local and manual checks; set it for recurring public runs.
 
+For a known internal link that intentionally redirects off-site, allow its destination host explicitly:
+
+```bash
+npm run audit -- --allow-external-redirect-host calendar.app.google
+```
+
+The external destination is never fetched. The redirect is recorded as an outbound boundary and excluded from sitemap page comparisons. Unlisted external redirects still make the audit incomplete. Same-origin redirect aliases are reconciled for sitemap and orphan comparisons; query strings and trailing slashes remain distinct unless an observed redirect connects them.
+
 ## Checks performed
 
 The tool reports:

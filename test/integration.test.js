@@ -94,6 +94,39 @@ test('same-origin redirect records requested and final URLs', async () => {
   } finally { await close(server); }
 });
 
+test('redirect aliases reconcile sitemap identity without merging distinct queries', async () => {
+  const { server, base } = await fixture((req, res) => {
+    if (req.url === '/robots.txt') { res.end(''); return; }
+    if (req.url === '/sitemap.xml') { res.setHeader('content-type', 'application/xml'); res.end(`<urlset><url><loc>${base}/new</loc></url></urlset>`); return; }
+    if (req.url.endsWith('.xml')) { res.writeHead(404); res.end(); return; }
+    if (req.url === '/old') { res.writeHead(301, { location: '/new' }); res.end(); return; }
+    res.setHeader('content-type', 'text/html'); res.end(html(base, req.url === '/' ? '<a href="/old">old</a><a href="/new?x=1">query</a>' : ''));
+  });
+  try {
+    const report = await runAudit({ baseUrl: base, maxPages: 5, timeoutMs: 1000 });
+    assert.ok(!report.issues.some(issue => issue.rule === 'not_in_sitemap' && issue.url === `${base}/old`));
+    assert.ok(report.issues.some(issue => issue.rule === 'not_in_sitemap' && issue.url === `${base}/new?x=1`));
+  } finally { await close(server); }
+});
+
+test('explicit external redirect boundary is recorded without fetching external HTML', async () => {
+  let externalRequests = 0;
+  const external = await fixture((req, res) => { externalRequests++; res.end(html('http://external.invalid')); });
+  const { server, base } = await fixture((req, res) => {
+    if (req.url === '/robots.txt') { res.end(''); return; }
+    if (req.url === '/sitemap.xml') { res.setHeader('content-type', 'application/xml'); res.end(`<urlset><url><loc>${base}/</loc></url></urlset>`); return; }
+    if (req.url.endsWith('.xml')) { res.writeHead(404); res.end(); return; }
+    if (req.url === '/out') { res.writeHead(302, { location: `${external.base}/` }); res.end(); return; }
+    res.setHeader('content-type', 'text/html'); res.end(html(base, '<a href="/out">external</a>'));
+  });
+  try {
+    const report = await runAudit({ baseUrl: base, maxPages: 3, timeoutMs: 1000, allowedExternalRedirectHosts: ['127.0.0.1'] });
+    assert.equal(externalRequests, 0);
+    assert.equal(report.health.status, 'clean');
+    assert.equal(report.pages.find(page => page.url === `${base}/out`).allowedExternalRedirect, true);
+  } finally { await close(server); await close(external.server); }
+});
+
 test('robots excludes a sitemap page and request pacing is applied', async () => {
   const times = [];
   const { server, base } = await fixture((req, res) => {

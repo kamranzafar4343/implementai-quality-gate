@@ -4,8 +4,8 @@ import { dirname, resolve } from 'node:path';
 import { runAudit } from './audit.js';
 
 function parseArgs(args) {
-  const options = { baseUrl: 'https://implementai.ae', out: 'reports/latest-report.json', maxPages: 250, timeoutMs: 12000, deadlineMs: 120000, delayMs: 0, failOnIssues: false };
-  const names = { '--url': 'baseUrl', '--out': 'out', '--max-pages': 'maxPages', '--timeout-ms': 'timeoutMs', '--deadline-ms': 'deadlineMs', '--delay-ms': 'delayMs' };
+  const options = { baseUrl: 'https://implementai.ae', out: 'reports/latest-report.json', maxPages: 250, timeoutMs: 12000, deadlineMs: 120000, delayMs: 0, allowedExternalRedirectHosts: [], failOnIssues: false };
+  const names = { '--url': 'baseUrl', '--out': 'out', '--max-pages': 'maxPages', '--timeout-ms': 'timeoutMs', '--deadline-ms': 'deadlineMs', '--delay-ms': 'delayMs', '--allow-external-redirect-host': 'allowedExternalRedirectHosts' };
   const seen = new Set();
   for (let i = 0; i < args.length; i++) {
     const token = args[i];
@@ -15,7 +15,8 @@ function parseArgs(args) {
     if (!(token in names)) throw new Error(`Unknown option: ${token}`);
     const value = args[++i];
     if (!value || value.startsWith('--')) throw new Error(`Missing value for ${token}`);
-    options[names[token]] = value;
+    if (token === '--allow-external-redirect-host') options.allowedExternalRedirectHosts = value.split(',').map(host => host.trim());
+    else options[names[token]] = value;
   }
   for (const key of ['maxPages', 'timeoutMs', 'deadlineMs', 'delayMs']) {
     const value = Number(options[key]);
@@ -25,9 +26,9 @@ function parseArgs(args) {
   return options;
 }
 try {
-  const { baseUrl, out: outputPath, maxPages, timeoutMs, deadlineMs, delayMs, failOnIssues } = parseArgs(process.argv.slice(2));
+  const { baseUrl, out: outputPath, maxPages, timeoutMs, deadlineMs, delayMs, allowedExternalRedirectHosts, failOnIssues } = parseArgs(process.argv.slice(2));
   const out = resolve(outputPath);
-  const report = await runAudit({ baseUrl, maxPages, timeoutMs, deadlineMs, delayMs });
+  const report = await runAudit({ baseUrl, maxPages, timeoutMs, deadlineMs, delayMs, allowedExternalRedirectHosts });
   await mkdir(dirname(out), { recursive: true });
   await writeFile(out, `${JSON.stringify(report, null, 2)}\n`);
   console.log(`\nSite Quality Gate — ${report.target}`);

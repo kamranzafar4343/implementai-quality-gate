@@ -28,12 +28,12 @@ function run(url, extra = []) {
     child.on('close', code => {
       let report;
       try { report = JSON.parse(output); } catch { report = null; }
-      resolve({ code, resultCount: report?.results?.length, resultPaths: Array.isArray(report?.results) ? report.results.map(item => new URL(item.url ?? item.requestUrl).pathname) : [], seoRows: report?.tables?.seo?.rows?.map(row => ({ path: row.urlPathAndQuery, title: row.title, description: row.description })) ?? [], seoNotices: report?.summary?.items?.filter(item => item.aplCode?.startsWith('seo-')).map(item => ({ code: item.aplCode, status: item.status, text: item.text })) ?? [] });
+      resolve({ code, resultCount: report?.results?.length, resultPaths: Array.isArray(report?.results) ? report.results.map(item => new URL(item.url ?? item.requestUrl).pathname) : [], seoRows: report?.tables?.seo?.rows?.map(row => ({ path: row.urlPathAndQuery, title: row.title, description: row.description })) ?? [], seoNotices: report?.summary?.items?.filter(item => item.aplCode?.startsWith('seo-')).map(item => ({ code: item.aplCode, status: item.status, text: item.text })) ?? [], ciGate: report?.ciGate?.checks?.filter(item => !item.passed) });
     });
   });
 }
 try {
-  for (const scenario of [{ path: '/' }, { path: '/sitemap.xml' }, { path: '/dead' }, { path: '/', extra: ['--max-visited-urls=1'] }]) {
+  for (const scenario of [{ path: '/' }, { path: '/sitemap.xml' }, { path: '/dead' }, { path: '/', extra: ['--max-visited-urls=1'] }, { path: '/dead', extra: ['--ci', '--ci-min-pages=1', '--ci-min-assets=0'] }, { path: '/', extra: ['--max-visited-urls=1', '--ci', '--ci-min-pages=1', '--ci-min-assets=0'] }]) {
     const result = await run(`${base}${scenario.path}`, scenario.extra);
     console.log(JSON.stringify({ scenario, ...result }, null, 2));
   }

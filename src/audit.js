@@ -36,7 +36,10 @@ async function fetchWithTimeout(url, timeoutMs, origin, deadline, policy) {
       const response = await fetch(current, { redirect: 'manual', signal: controller.signal, headers: { 'user-agent': 'SiteQualityGate/1.0 (+public-site SEO audit)' } });
       if (response.status >= 300 && response.status < 400 && response.headers.has('location')) {
         const next = normalizeUrl(response.headers.get('location'), current);
-        if (!next || !sameOrigin(next, origin)) return { ok: false, status: response.status, url: next || current, error: 'Redirect leaves the audit origin', outOfScope: true };
+        if (!next || !sameOrigin(next, origin)) {
+          const allowed = next && policy?.allowedExternalRedirectHosts?.has(new URL(next).hostname);
+          return { ok: false, status: response.status, url: next || current, error: allowed ? null : 'Redirect leaves the audit origin', outOfScope: true, allowedExternalRedirect: !!allowed };
+        }
         if (policy?.rules && !robotsAllows(next, policy.rules)) return { ok: false, status: response.status, url: next, error: 'Redirect target excluded by robots.txt', robotsExcluded: true };
         if (policy?.delayMs) {
           const waitMs = Math.max(0, policy.nextRequestAt - Date.now());
@@ -115,7 +118,7 @@ async function discoverSitemaps(origin, timeoutMs, deadline, policy) {
 
 async function inspectPage(url, timeoutMs, origin, deadline, policy) {
   const result = await fetchText(url, timeoutMs, origin, deadline, policy);
-  const page = { url, finalUrl: normalizeUrl(result.url) || url, status: result.status, contentType: result.contentType || '', fetchError: result.error || null, outOfScope: !!result.outOfScope, title: null, metaDescription: null, canonical: null, internalLinks: [] };
+  const page = { url, finalUrl: normalizeUrl(result.url) || url, status: result.status, contentType: result.contentType || '', fetchError: result.error || null, outOfScope: !!result.outOfScope, allowedExternalRedirect: !!result.allowedExternalRedirect, title: null, metaDescription: null, canonical: null, internalLinks: [] };
   if (!result.ok || !isHtml({ headers: { get: () => result.contentType } })) return page;
   const $ = cheerio.load(result.text);
   page.title = $('title').first().text().trim() || null;
@@ -132,8 +135,9 @@ async function inspectPage(url, timeoutMs, origin, deadline, policy) {
   return page;
 }
 
-export function evaluateAudit({ pages, sitemapPages, discoveredUrls, sitemapChecks = [], startUrl = pages[0]?.url }) {
+export function evaluateAudit({ pages, sitemapPages, discoveredUrls, sitemapChecks = [], startUrl = pages[0]?.url, aliases = new Map() }) {
   const issues = [];
+  const identity = url => aliases.get(url) || url;
   for (const page of pages) {
     if (!page.fetchError && page.status >= 200 && page.status < 300 && page.contentType.toLowerCase().includes('text/html')) {
       if (!page.metaDescription) issues.push({ rule: 'missing_meta_description', url: page.url, message: 'Meta description is missing or empty.' });
@@ -142,26 +146,28 @@ export function evaluateAudit({ pages, sitemapPages, discoveredUrls, sitemapChec
       if (!page.canonical) issues.push({ rule: 'missing_canonical', url: page.url, message: 'Canonical URL is missing or invalid.' });
     }
   }
-  const discovered = new Set(discoveredUrls);
-  for (const url of [...discovered].sort()) if (!sitemapPages.includes(url)) issues.push({ rule: 'not_in_sitemap', url, message: 'Discovered through internal links but not present in the sitemap.' });
+  const externalBoundaries = new Set(pages.filter(page => page.allowedExternalRedirect).map(page => page.url));
+  const sitemapIdentities = new Set(sitemapPages.map(identity));
+  const discovered = new Set([...discoveredUrls].filter(url => !externalBoundaries.has(url)).map(identity));
+  for (const url of [...discovered].sort()) if (!sitemapIdentities.has(url)) issues.push({ rule: 'not_in_sitemap', url, message: 'Discovered through internal links but not present in the sitemap.' });
   for (const item of sitemapChecks) if (!item.valid) issues.push({ rule: 'invalid_sitemap_url', url: item.url, status: item.status, message: item.error || `Sitemap URL did not return a valid live HTML page (status ${item.status ?? 'unknown'}).` });
   const linkedFrom = new Map();
-  const live = new Set(pages.filter(page => !page.fetchError && page.status >= 200 && page.status < 300 && page.contentType.toLowerCase().includes('text/html')).map(page => page.url));
-  for (const page of pages.filter(page => live.has(page.url))) for (const target of page.internalLinks) if (target !== page.url) linkedFrom.set(target, (linkedFrom.get(target) || 0) + 1);
-  for (const url of [...new Set(sitemapPages)].sort()) {
-    if (url !== startUrl && live.has(url) && !linkedFrom.has(url)) issues.push({ rule: 'orphan_candidate', url, message: 'Candidate has no inbound internal links from successfully inspected pages; verify manually.' });
+  const live = new Set(pages.filter(page => !page.fetchError && page.status >= 200 && page.status < 300 && page.contentType.toLowerCase().includes('text/html')).map(page => identity(page.url)));
+  for (const page of pages.filter(page => live.has(identity(page.url)))) for (const target of page.internalLinks) if (identity(target) !== identity(page.url)) linkedFrom.set(identity(target), (linkedFrom.get(identity(target)) || 0) + 1);
+  for (const url of [...sitemapIdentities].sort()) {
+    if (url !== identity(startUrl) && live.has(url) && !linkedFrom.has(url)) issues.push({ rule: 'orphan_candidate', url, message: 'Candidate has no inbound internal links from successfully inspected pages; verify manually.' });
   }
   const counts = Object.fromEntries(['missing_meta_description','meta_description_too_long','title_too_long','missing_canonical','not_in_sitemap','invalid_sitemap_url','orphan_candidate'].map(rule => [rule, issues.filter(i => i.rule === rule).length]));
   return { counts, issues };
 }
 
-export async function runAudit({ baseUrl = 'https://implementai.ae', maxPages = 250, timeoutMs = DEFAULT_TIMEOUT_MS, deadlineMs = DEFAULT_DEADLINE_MS, delayMs = 0 } = {}) {
+export async function runAudit({ baseUrl = 'https://implementai.ae', maxPages = 250, timeoutMs = DEFAULT_TIMEOUT_MS, deadlineMs = DEFAULT_DEADLINE_MS, delayMs = 0, allowedExternalRedirectHosts = [] } = {}) {
   const startUrl = normalizeUrl(baseUrl);
   if (!startUrl) throw new Error(`Invalid base URL: ${baseUrl}`);
-  if (!Number.isInteger(maxPages) || maxPages < 1 || !Number.isInteger(timeoutMs) || timeoutMs < 1 || !Number.isInteger(deadlineMs) || deadlineMs < 1 || !Number.isInteger(delayMs) || delayMs < 0) throw new Error('Invalid audit limits');
+  if (!Number.isInteger(maxPages) || maxPages < 1 || !Number.isInteger(timeoutMs) || timeoutMs < 1 || !Number.isInteger(deadlineMs) || deadlineMs < 1 || !Number.isInteger(delayMs) || delayMs < 0 || !Array.isArray(allowedExternalRedirectHosts) || allowedExternalRedirectHosts.some(host => !/^[a-z0-9.-]+$/i.test(host))) throw new Error('Invalid audit limits or redirect hosts');
   const deadline = Date.now() + deadlineMs;
   const origin = new URL(startUrl).origin;
-  const policy = { rules: null, delayMs, nextRequestAt: 0 };
+  const policy = { rules: null, delayMs, nextRequestAt: 0, allowedExternalRedirectHosts: new Set(allowedExternalRedirectHosts.map(host => host.toLowerCase())) };
   const sitemap = await discoverSitemaps(origin, timeoutMs, deadline, policy);
   const queue = [startUrl, ...sitemap.sitemapPages.filter(url => url !== startUrl)];
   const queued = new Set(queue);
@@ -183,7 +189,8 @@ export async function runAudit({ baseUrl = 'https://implementai.ae', maxPages = 
     return { url, status: page.status, valid: !page.fetchError && page.status >= 200 && page.status < 300 && page.contentType.toLowerCase().includes('text/html'), error: page.fetchError || undefined };
   });
   const pages = [...visited.values()].sort((a,b) => a.url.localeCompare(b.url));
-  const evaluated = evaluateAudit({ pages, sitemapPages: sitemap.sitemapPages, discoveredUrls, sitemapChecks, startUrl });
+  const aliases = new Map(pages.filter(page => !page.outOfScope && page.finalUrl !== page.url).map(page => [page.url, page.finalUrl]));
+  const evaluated = evaluateAudit({ pages, sitemapPages: sitemap.sitemapPages, discoveredUrls, sitemapChecks, startUrl, aliases });
   const errors = pages.filter(page => page.fetchError).map(page => ({ url: page.url, error: page.fetchError }));
   const root = visited.get(startUrl);
   if (!root || root.status < 200 || root.status >= 300 || !root.contentType.toLowerCase().includes('text/html')) errors.unshift({ url: startUrl, error: root?.fetchError || `Start URL did not return valid HTML (status ${root?.status ?? 'unknown'})` });
@@ -198,8 +205,8 @@ export async function runAudit({ baseUrl = 'https://implementai.ae', maxPages = 
     tool: { name: 'implementai-site-quality-gate', version: '1.0.0' },
     target: origin,
     generatedAt: new Date().toISOString(),
-    configuration: { maxPages, timeoutMs, deadlineMs, delayMs, titleMaxCharacters: 60, metaDescriptionMaxCharacters: 160 },
-    urlPolicy: { scope: 'exact origin (scheme, hostname, port)', redirects: 'up to five, same origin only', identity: 'fragments ignored; query strings and trailing slashes distinct; redirects retain requested and final URLs; canonicals reported but do not merge URLs' },
+    configuration: { maxPages, timeoutMs, deadlineMs, delayMs, allowedExternalRedirectHosts, titleMaxCharacters: 60, metaDescriptionMaxCharacters: 160 },
+    urlPolicy: { scope: 'exact origin (scheme, hostname, port)', redirects: 'up to five, same origin only; allowlisted external hosts are boundaries and are never fetched', identity: 'fragments ignored; query strings and trailing slashes distinct; same-origin redirect aliases merge for inventory comparisons; canonicals do not merge URLs' },
     health: { status: incomplete ? 'incomplete' : evaluated.issues.length ? 'findings' : 'clean', errors, skippedUrls, sitemapDiscoveryIncomplete: sitemap.incomplete, deadlineExceeded },
     crawl: { pagesInspected: pages.length, pagesRequested: queued.size, pagesFetched: pages.filter(page => page.status !== null).length, pagesEvaluated: pages.filter(page => !page.fetchError && page.status >= 200 && page.status < 300 && page.contentType.toLowerCase().includes('text/html')).length, pagesSkipped: skippedUrls.length, pagesRemaining: skippedUrls.length, maxPagesReached: skippedUrls.length > 0 && visited.size >= maxPages, robotsStatus: sitemap.robotsStatus, sitemapFiles: sitemap.sitemapFiles, sitemapUrlCount: sitemap.sitemapPages.length, discoveredInternalUrlCount: discoveredUrls.size },
     summary: evaluated.counts,
