@@ -4,6 +4,14 @@ A small Node.js tool that checks the public iMPLEMENTAi website for common SEO a
 
 For complete setup, operation, CI, and report review instructions, see [MANUAL.md](MANUAL.md).
 
+Quick start for the reviewed iMPLEMENTAi configuration:
+
+```bash
+npm ci
+npm test
+npm run audit:site
+```
+
 ## Requirements
 
 - Node.js 20.18.1 or newer

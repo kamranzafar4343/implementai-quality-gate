@@ -4,7 +4,12 @@
   "description": "A small, repeatable SEO and discoverability audit for public websites.",
   "type": "module",
   "private": true,
-  "scripts": { "audit": "node src/cli.js", "test": "node --test" },
+  "scripts": {
+    "audit": "node src/cli.js",
+    "audit:site": "node src/cli.js --url https://implementai.ae/ --max-pages 300 --timeout-ms 12000 --deadline-ms 300000 --delay-ms 250 --allow-external-redirect-host calendar.app.google --fail-on-issues --out reports/latest-report.json",
+    "audit:site:advisory": "node src/cli.js --url https://implementai.ae/ --max-pages 300 --timeout-ms 12000 --deadline-ms 300000 --delay-ms 250 --allow-external-redirect-host calendar.app.google --out reports/latest-report.json",
+    "test": "node --test"
+  },
   "engines": { "node": ">=20.18.1" },
   "dependencies": { "cheerio": "^1.0.0", "fast-xml-parser": "^4.5.3" }
 }
