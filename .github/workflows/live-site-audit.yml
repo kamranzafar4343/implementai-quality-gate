@@ -1,0 +1,35 @@
+name: Live site audit
+on:
+  workflow_dispatch:
+    inputs:
+      enforce_findings:
+        description: Fail the run when the completed audit has findings
+        type: boolean
+        required: true
+        default: true
+jobs:
+  audit-live-site:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Audit implementai.ae
+        shell: bash
+        run: |
+          args=(--url https://implementai.ae/ --max-pages 300 --timeout-ms 12000 --deadline-ms 300000 --delay-ms 250 --allow-external-redirect-host calendar.app.google --out reports/ci-live-report.json)
+          if [[ "${{ inputs.enforce_findings }}" == "true" ]]; then
+            args+=(--fail-on-issues)
+          fi
+          npm run audit -- "${args[@]}"
+      - name: Upload JSON report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-site-audit-json
+          path: reports/ci-live-report.json
+          if-no-files-found: warn

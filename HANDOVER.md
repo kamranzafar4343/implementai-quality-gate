@@ -1,73 +1,11 @@
 # Handover
 
-## What I built
+The Website Quality Gate is a small Node.js CLI that audits public, server-rendered HTML. It produces terminal and JSON reports for the seven assignment rules. Start with [MANUAL.md](MANUAL.md) for installation, commands, exit codes, report interpretation, and GitHub Actions use.
 
-- A small Node.js command-line tool for auditing public websites.
-- It audits `https://implementai.ae` by default.
-- It produces a readable terminal summary, a JSON report, and deterministic exit codes for CI.
+The updated crawler shares a page budget across link and sitemap discovery, bounds requests and the overall run, records coverage, respects implemented robots exclusions, and supports request pacing. It distinguishes clean, findings, and incomplete audits. External redirects are rejected unless an exact destination host is explicitly allowed as an outbound boundary. The site-specific iMPLEMENTAi command is documented in the manual.
 
-## Checks included
+Local HTTP and CLI regression tests cover the failures described in the feedback. [VERIFICATION.md](VERIFICATION.md) records the 14 October 2026 live run and links to its JSON snapshot. The site audit completed with findings; the tool did not modify the website. The code test workflow runs on push and pull request. A separate manual live-audit workflow can enforce findings and upload its report.
 
-- Missing meta descriptions.
-- Meta descriptions over 160 characters.
-- Page titles over 60 characters.
-- Missing or invalid canonical URLs.
-- Internal pages missing from the sitemap.
-- Sitemap URLs that do not return a live HTML page.
-- Possible orphan pages with no inbound internal links.
+[SITEONE_EVALUATION.md](SITEONE_EVALUATION.md) documents the controlled SiteOne comparison. SiteOne was not adopted: an adapter would still need to reconcile link and sitemap inventories and implement this brief's exact rule and coverage policy.
 
-## Technical approach
-
-- Node.js 20 with built-in `fetch`.
-- Cheerio parses HTML pages.
-- `fast-xml-parser` parses XML sitemaps.
-- The crawler follows same-origin links and uses a configurable page limit.
-- URLs are normalized by removing fragments and trailing slashes.
-
-## Assumptions
-
-- Only publicly accessible pages are audited.
-- The tool checks server-rendered HTML and does not execute JavaScript.
-- A valid sitemap page must return a 2xx response with an HTML content type.
-- Orphan results are candidates and require manual confirmation.
-- The tool does not submit forms, authenticate, or modify the target website.
-
-## Testing and report
-
-- Automated tests are included in `test/audit.test.js`.
-- Run tests with `npm test`.
-- The example live report is stored in `reports/implementai-live-report.json`.
-
-## Delivery commands
-
-```bash
-npm install
-npm run audit -- --out reports/implementai-live-report.json
-npm test
-```
-
-For CI quality-gate behavior:
-
-```bash
-npm run audit -- --fail-on-issues
-```
-
-## Production next steps
-
-If this became a production quality gate, I would add:
-
-- A GUI interface to show the issues and to generate pdf report of issues.
-- GitHub Actions to run the tests and audit automatically.
-- A configured page limit, timeout, retry policy, and rate limit.
-- A baseline report so CI reports only new issues.
-- More integration tests using a local fixture website.
-- Full `robots.txt` support and optional JavaScript rendering.
-- Alerts or pull-request comments when new issues are found.
-
-## Improvements with more time
-
-- Add a local HTTP fixture server for full crawl and sitemap integration tests.
-- Respect `robots.txt` disallow and crawl-delay rules more fully.
-- Add retries, rate limiting, and optional JavaScript rendering.
-- Validate whether canonical URLs point to the preferred page.
-- Add a GitHub Actions workflow for automated CI checks.
+Limits: no JavaScript rendering or authenticated pages; orphan results are candidates for human review. Before a release decision, rerun the live audit and inspect health, coverage, and findings.

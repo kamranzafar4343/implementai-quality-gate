@@ -12,4 +12,6 @@ Result: **complete audit with findings**. The exit code was `1` because `--fail-
 
 The controlled local suite covers clean, findings, and operational failure outcomes, crawl limits, redirects, timeouts, robots rules, pacing, URL identity, orphan handling, and malformed CLI arguments. The suite passed locally. The GitHub Actions workflow runs `npm ci` and the suite twice on Node 20.18.1 and Node 22.
 
+`MANUAL.md` provides operating instructions. A separate manually dispatched GitHub Actions workflow runs the live audit and uploads its JSON report; finding enforcement is configurable when starting that workflow.
+
 SiteOne Crawler was evaluated separately in `SITEONE_EVALUATION.md`. Its report output and CI mode are useful, but no SiteOne adapter or fork was adopted for the assignment.

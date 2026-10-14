@@ -2,6 +2,8 @@
 
 A small Node.js tool that checks the public iMPLEMENTAi website for common SEO and website quality issues.
 
+For complete setup, operation, CI, and report review instructions, see [MANUAL.md](MANUAL.md).
+
 ## Requirements
 
 - Node.js 20.18.1 or newer
@@ -105,15 +107,15 @@ npm run audit -- --fail-on-issues
 
 Exit codes:
 
-- `0` — audit completed successfully with no enforced failure.
-- `1` — audit completed and findings were detected with `--fail-on-issues`.
-- `2` — invalid options or the audit could not run.
+- `0` — complete audit with no enforced findings.
+- `1` — complete audit with findings and `--fail-on-issues`.
+- `2` — invalid options or an incomplete/failed audit.
 
 ## Project files
 
 The JSON `health` section distinguishes `clean`, `findings`, and `incomplete`, and lists errors and skipped URLs. Exit code `2` means invalid options or an incomplete audit; a missing sitemap, exhausted deadline, or truncated crawl never passes. `--timeout-ms` sets the per-request limit and `--deadline-ms` limits the whole audit. Responses are capped at 2 MiB. The terminal and JSON report show requested, fetched, evaluated, skipped, and remaining page counts.
 
-URL identity uses the full HTTP(S) URL without its fragment. Query strings and trailing slashes remain distinct. Redirects are followed only within the exact origin (same scheme, host, and port), for at most five hops. Each page records its requested `url` and `finalUrl`; redirect aliases and canonical URLs do not silently merge inventory entries. Relative links resolve against `finalUrl`. External redirects make the audit incomplete.
+URL identity uses the full HTTP(S) URL without its fragment. Query strings and trailing slashes remain distinct unless an observed same-origin redirect connects them. Redirects are followed only within the exact origin (same scheme, host, and port), for at most five hops. Each page records its requested `url` and `finalUrl`; same-origin redirect aliases are reconciled for sitemap and orphan comparisons. Canonical URLs do not merge inventory entries. Relative links resolve against `finalUrl`. Unlisted external redirects make the audit incomplete.
 
 - `src/audit.js` — crawler and audit rules.
 - `src/cli.js` — command-line interface and exit behavior.
@@ -129,5 +131,6 @@ See `SITEONE_EVALUATION.md` for the controlled SiteOne Crawler comparison and re
 - The tool checks server-rendered HTML and does not run JavaScript.
 - Orphan findings are candidates and should be checked manually.
 - Crawling is limited by `--max-pages`; a truncated crawl exits incomplete.
-- Redirects to another origin are rejected.
+- Unlisted redirects to another origin are rejected; allowlisted destinations are recorded but never fetched.
+- A separate manual GitHub Actions workflow runs the live audit and uploads its JSON report.
 - The tool only reads public pages and does not submit forms or change website content.
