@@ -4,7 +4,7 @@ A small Node.js tool that checks the public iMPLEMENTAi website for common SEO a
 
 ## Requirements
 
-- Node.js 20 or newer
+- Node.js 20.18.1 or newer
 - Internet access
 
 ## Install
@@ -12,7 +12,7 @@ A small Node.js tool that checks the public iMPLEMENTAi website for common SEO a
 From the project folder, run:
 
 ```bash
-npm install
+npm ci
 ```
 
 ## Run the audit
@@ -65,7 +65,7 @@ The tool reports:
 npm test
 ```
 
-The tests use controlled sample data and do not contact the live website.
+The tests use controlled local HTTP and CLI fixtures and do not contact the live website.
 
 ## CI exit codes
 
@@ -89,6 +89,8 @@ Exit codes:
 
 ## Project files
 
+The JSON `health` section distinguishes `clean`, `findings`, and `incomplete`, and lists errors and skipped URLs. Exit code `2` means invalid options or an incomplete audit; a missing sitemap or truncated crawl never passes. `--timeout-ms` sets the per-request limit. Responses are capped at 2 MiB.
+
 - `src/audit.js` — crawler and audit rules.
 - `src/cli.js` — command-line interface and exit behavior.
 - `test/audit.test.js` — automated tests.
@@ -100,5 +102,6 @@ Exit codes:
 
 - The tool checks server-rendered HTML and does not run JavaScript.
 - Orphan findings are candidates and should be checked manually.
-- Crawling is limited by `--max-pages`.
+- Crawling is limited by `--max-pages`; a truncated crawl exits incomplete.
+- Redirects to another origin are rejected. Query strings remain distinct.
 - The tool only reads public pages and does not submit forms or change website content.

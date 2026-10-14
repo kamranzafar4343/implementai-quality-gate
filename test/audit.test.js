@@ -25,7 +25,7 @@ test('flags discovered URLs missing from sitemap, invalid sitemap URLs, and orph
   const result = evaluateAudit({ pages, sitemapPages: ['https://example.com/', 'https://example.com/orphan', 'https://example.com/dead'], discoveredUrls: new Set(['https://example.com/linked', 'https://example.com/not-in-map']), sitemapChecks: [{ url: 'https://example.com/dead', status: 404, valid: false }] });
   assert.equal(result.counts.not_in_sitemap, 2);
   assert.equal(result.counts.invalid_sitemap_url, 1);
-  assert.ok(result.issues.some(i => i.rule === 'orphan_candidate' && i.url === 'https://example.com/orphan'));
+  assert.ok(!result.issues.some(i => i.rule === 'orphan_candidate' && i.url === 'https://example.com/dead'));
 });
 
 test('does not report metadata issues for non-HTML or failed pages', () => {

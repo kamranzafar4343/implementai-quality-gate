@@ -3,14 +3,31 @@ import { writeFile, mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { runAudit } from './audit.js';
 
-function arg(name, fallback) { const i = process.argv.indexOf(name); return i >= 0 ? process.argv[i + 1] : fallback; }
-const baseUrl = arg('--url', 'https://implementai.ae');
-const out = resolve(arg('--out', 'reports/latest-report.json'));
-const maxPages = Number(arg('--max-pages', '250'));
-const failOnIssues = process.argv.includes('--fail-on-issues');
-if (!Number.isInteger(maxPages) || maxPages < 1) { console.error('--max-pages must be a positive integer'); process.exit(2); }
+function parseArgs(args) {
+  const options = { baseUrl: 'https://implementai.ae', out: 'reports/latest-report.json', maxPages: 250, timeoutMs: 12000, failOnIssues: false };
+  const names = { '--url': 'baseUrl', '--out': 'out', '--max-pages': 'maxPages', '--timeout-ms': 'timeoutMs' };
+  const seen = new Set();
+  for (let i = 0; i < args.length; i++) {
+    const token = args[i];
+    if (seen.has(token)) throw new Error(`Duplicate option: ${token}`);
+    seen.add(token);
+    if (token === '--fail-on-issues') { options.failOnIssues = true; continue; }
+    if (!(token in names)) throw new Error(`Unknown option: ${token}`);
+    const value = args[++i];
+    if (!value || value.startsWith('--')) throw new Error(`Missing value for ${token}`);
+    options[names[token]] = value;
+  }
+  for (const key of ['maxPages', 'timeoutMs']) {
+    const value = Number(options[key]);
+    if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${key} must be a positive integer`);
+    options[key] = value;
+  }
+  return options;
+}
 try {
-  const report = await runAudit({ baseUrl, maxPages });
+  const { baseUrl, out: outputPath, maxPages, timeoutMs, failOnIssues } = parseArgs(process.argv.slice(2));
+  const out = resolve(outputPath);
+  const report = await runAudit({ baseUrl, maxPages, timeoutMs });
   await mkdir(dirname(out), { recursive: true });
   await writeFile(out, `${JSON.stringify(report, null, 2)}\n`);
   console.log(`\nSite Quality Gate — ${report.target}`);
@@ -20,7 +37,9 @@ try {
   for (const [rule, count] of Object.entries(report.summary)) console.log(`  ${rule.padEnd(28)} ${count}`);
   console.log(`\nJSON report: ${out}`);
   console.log(`Total findings: ${report.issues.length}`);
-  if (failOnIssues && report.issues.length) process.exitCode = 1;
+  console.log(`Audit health: ${report.health.status} | Evaluated: ${report.crawl.pagesEvaluated} | Skipped: ${report.crawl.pagesSkipped}`);
+  if (report.health.status === 'incomplete') process.exitCode = 2;
+  else if (failOnIssues && report.issues.length) process.exitCode = 1;
 } catch (error) {
   console.error(`Audit failed: ${error.message}`);
   process.exitCode = 2;
