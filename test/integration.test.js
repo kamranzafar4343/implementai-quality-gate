@@ -94,6 +94,25 @@ test('same-origin redirect records requested and final URLs', async () => {
   } finally { await close(server); }
 });
 
+test('robots excludes a sitemap page and request pacing is applied', async () => {
+  const times = [];
+  const { server, base } = await fixture((req, res) => {
+    times.push(Date.now());
+    if (req.url === '/robots.txt') { res.end('User-agent: *\nDisallow: /private\n'); return; }
+    if (req.url === '/sitemap.xml') { res.setHeader('content-type', 'application/xml'); res.end(`<urlset><url><loc>${base}/private</loc></url></urlset>`); return; }
+    if (req.url.endsWith('.xml')) { res.writeHead(404); res.end(); return; }
+    res.setHeader('content-type', 'text/html'); res.end(html(base));
+  });
+  try {
+    const report = await runAudit({ baseUrl: base, maxPages: 2, timeoutMs: 1000, delayMs: 30 });
+    assert.equal(report.health.status, 'incomplete');
+    assert.ok(report.health.errors.some(item => item.url === `${base}/private` && item.error === 'Excluded by robots.txt'));
+    assert.equal(report.crawl.pagesFetched, 1);
+    assert.ok(times.length >= 3);
+    assert.ok(times[1] - times[0] >= 20);
+  } finally { await close(server); }
+});
+
 test('body timeout remains active and external redirect is rejected', async () => {
   const external = await fixture((req, res) => { res.setHeader('content-type', 'text/html'); res.end(html('http://external.invalid')); });
   const { server, base } = await fixture((req, res) => {

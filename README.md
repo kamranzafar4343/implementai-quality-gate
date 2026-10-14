@@ -53,6 +53,14 @@ To set the overall audit deadline (default 120,000 ms):
 npm run audit -- --deadline-ms 30000
 ```
 
+For recurring public runs, add a delay between requests (for example, 250 ms):
+
+```bash
+npm run audit -- --delay-ms 250
+```
+
+The crawler honors `robots.txt` `User-agent`, `Allow`, and `Disallow` rules for `SiteQualityGate` and `*`, including `*` and `$` path patterns. Excluded in-scope pages make the audit incomplete. `--delay-ms` defaults to 0 for local and manual checks; set it for recurring public runs.
+
 ## Checks performed
 
 The tool reports:
@@ -71,7 +79,7 @@ The tool reports:
 npm test
 ```
 
-The tests use controlled local HTTP and CLI fixtures and do not contact the live website.
+The tests use controlled local HTTP and CLI fixtures and do not contact the live website. CI runs the suite twice on Node 20.18.1 and 22 after `npm ci`.
 
 ## CI exit codes
 
@@ -107,6 +115,8 @@ URL identity uses the full HTTP(S) URL without its fragment. Query strings and t
 - `AI_WORKLOG.md` — record of AI assistance and verification.
 
 ## Limitations
+
+See `SITEONE_EVALUATION.md` for the controlled SiteOne Crawler comparison and remaining adoption work.
 
 - The tool checks server-rendered HTML and does not run JavaScript.
 - Orphan findings are candidates and should be checked manually.
